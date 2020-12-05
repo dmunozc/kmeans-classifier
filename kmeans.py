@@ -6,7 +6,6 @@ With k = 30 the accuracy reaches 80%.
 
 import numpy as np
 import pandas as pd
-import math
 import random
 import argparse
 from sklearn.metrics import confusion_matrix
@@ -33,17 +32,13 @@ def recalculate_centroids(df, clusters):
     """Return new centroids based on clusters."""
     centroids = [[] for x in range(len(clusters))]
     for i in range(len(clusters)):
-        centroids[i] = np.array(df.loc[clusters[i]].mean().values)
+        centroids[i] = df.loc[clusters[i]].mean()
     return np.array(centroids)
 
 
 def get_accuracy(actual_class, predicted_class):
     """Return accuracy."""
-    correct = 0.0
-    for i in range(len(actual_class)):
-        if actual_class[i] == predicted_class[i]:
-            correct += 1
-    return correct / len(actual_class)
+    return np.sum(actual_class == predicted_class)/ len(actual_class)
 
 
 def calculate_entropy(classes, cluster):
@@ -52,8 +47,8 @@ def calculate_entropy(classes, cluster):
     entropy_sum = 0
     mi = len(cluster_clasess)
     for class_type in cluster_clasess.unique():
-        mij = len((cluster_clasess == class_type).to_numpy().nonzero()[0])
-        entropy_sum += (mij / mi) * math.log2(mij / mi)
+        mij = np.count_nonzero(cluster_clasess == class_type)
+        entropy_sum += (mij / mi) * np.log2(mij / mi)
 
     return entropy_sum * -1
 
@@ -62,9 +57,8 @@ def calculate_mean_entropy(classes, clusters):
     """Return mean entropy of cluster."""
     mean_sum = 0
     for i in range(len(clusters)):
-        mean_sum += (len(clusters[i]) / len(classes)) * calculate_entropy(
-            classes, clusters[i]
-        )
+        mean_sum += (len(clusters[i]) / len(classes)) * calculate_entropy(classes, clusters[i])
+
     return mean_sum
 
 
@@ -75,6 +69,7 @@ def generate_pairs(lst):
         for j in range(i):
             if i != j:
                 pairs.append([i, j])
+
     return pairs
 
 
@@ -84,18 +79,13 @@ def calculate_MSS(centroids):
     sum_MSS = 0
     k = len(centroids)
     for pair in pairs:
-        sum_MSS += (
-            euclidian_distance_points(centroids[pair[0]], centroids[pair[1]])
-            ** 2
-        )
+        sum_MSS += np.power(euclidian_distance_points(centroids[pair[0]], centroids[pair[1]]), 2)
     return sum_MSS / (k * (k - 1) / 2)
 
 
 def calculate_MSE_cluster(cluster, centroid):
     """Return MSE from cluster to centroid."""
-    return np.sum(np.sum(np.power((cluster - centroid), 2), axis=1)) / len(
-        cluster
-    )
+    return np.sum(np.power((cluster - centroid), 2).values) / len(cluster)
 
 
 # calcualte the average mse based on the mse of each cluster and centroids
@@ -104,28 +94,23 @@ def calculate_average_MSE(df, clusters, centroids):
     sum_MSE = 0
     for i in range(len(clusters)):
         sum_MSE += calculate_MSE_cluster(df.iloc[clusters[i]], centroids[i])
+
     return sum_MSE / len(clusters)
 
 
 def get_euclidian_distance(cluster, centroid):
     """Return distance between cluster and centroids."""
-    return np.power(np.sum(np.power((cluster - centroid), 2), axis=1), 0.5)
+    return np.sqrt(np.sum(np.power((cluster - centroid), 2), axis=1))
 
 
 def euclidian_distance_points(p1, p2):
     """Return distance between two points."""
-    return math.sqrt(np.sum(np.power((p1 - p2), 2), axis=0))
+    return np.sqrt(np.sum(np.power((p1 - p2), 2), axis=0))
 
 
 def random_centroids(k, dim, minimum, maximum):
     """Return random centroids."""
-    centroids = []
-    for i in range(k):
-        random_center = np.array(
-            [random.randint(minimum, maximum) for x in range(dim)]
-        )
-        centroids.append(random_center)
-    return np.array(centroids)
+    return np.random.randint(minimum, maximum + 1, size=(k, dim))
 
 
 def main(train_file, test_file, k):
@@ -133,7 +118,9 @@ def main(train_file, test_file, k):
     headers.append("class")
     train_df = pd.read_csv(train_file, names=headers)
     test_df = pd.read_csv(test_file, names=headers)
-    epochs = 1
+    train_data = train_df.iloc[:, :-1]
+    test_data = test_df.iloc[:, :-1]
+    epochs = 2
     train_centroids = []
     train_clusters = []
     min_MSE = float("inf")
@@ -141,7 +128,7 @@ def main(train_file, test_file, k):
     for epoch in range(epochs):
         print("Epoch", epoch)
         # Get random centroids from the train data.
-        new_centroids = train_df.drop("class", axis=1).sample(k).values
+        new_centroids = train_data.sample(k).values
         # Get random centroids to compare against.
         old_centroids = random_centroids(k=k, dim=64, minimum=0, maximum=16)
         # Repeat until the mean value of the centroid does not change much.
@@ -150,12 +137,9 @@ def main(train_file, test_file, k):
             clusters_final = []
             distances = []
             # Get the distance from all train data to each centroid.
+
             for i in range(len(new_centroids)):
-                distances.append(
-                    get_euclidian_distance(
-                        train_df.drop("class", axis=1), new_centroids[i]
-                    )
-                )
+                distances.append(get_euclidian_distance(train_data, new_centroids[i]))
             # Get which data point is closer to which centroid.
             closest_centroids = np.argmin(np.array(distances), axis=0)
             # Set each cluster's members to the data points they are closer
@@ -170,45 +154,35 @@ def main(train_file, test_file, k):
                     clusters_final.append(clusters[j])
                 else:
                     empty_clusters.append(j)
+
             new_centroids = np.delete(new_centroids, empty_clusters, axis=0)
             # Save the centroids to calculate the man for next loop.
             old_centroids = new_centroids.copy()
             # Recalculate new centroids based on the clusters.
-            new_centroids = recalculate_centroids(
-                train_df.drop("class", axis=1), clusters_final
-            )
+            new_centroids = recalculate_centroids(train_data, clusters_final)
             # Ff the average mse is the minimum, saved that cluster.
-            avg_MSE = calculate_average_MSE(
-                train_df.drop("class", axis=1), clusters_final, new_centroids
-            )
+            avg_MSE = calculate_average_MSE(train_data, clusters_final, new_centroids)
             if avg_MSE < min_MSE:
                 min_MSE = avg_MSE
                 train_centroids = new_centroids.copy()
                 train_clusters = clusters_final.copy()
     # With the lowest average mse clusters, calculate metrics.
-    avg_MSE = calculate_average_MSE(
-        train_df.drop("class", axis=1), train_clusters, train_centroids
-    )
+    avg_MSE = calculate_average_MSE(train_data, train_clusters, train_centroids)
     mss = calculate_MSS(train_centroids)
     mean_entropy = calculate_mean_entropy(train_df["class"], train_clusters)
+
     print("average MSE", avg_MSE, "MSS", mss, "Mean Entropy", mean_entropy)
     # Fet the predicted class based on each cluster class frequency.
-    prediction_centroids = centroids_predictions(
-        train_df["class"], train_clusters, train_centroids
-    )
+    prediction_centroids = centroids_predictions(train_df["class"], train_clusters, train_centroids)
     prediction_classes = []
-    test_data = test_df.drop("class", axis=1)
+
     # Classify the test data based on its distance to each centroid.
     for index in test_data.index:
         min_dist = float("inf")
         class_type = -1
         for key in prediction_centroids:
             dist = np.power(
-                np.sum(
-                    np.power(
-                        (test_data.iloc[index] - prediction_centroids[key]), 2
-                    )
-                ),
+                np.sum(np.power((test_data.iloc[index] - prediction_centroids[key]), 2)),
                 0.5,
             )
             if dist < min_dist:
@@ -235,21 +209,11 @@ def main(train_file, test_file, k):
 
 if __name__ == "__main__":
     random.seed(2814)
+    np.random.seed(2814)
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-train",
-        dest="train",
-        help="optidigits train file",
-        default="optdigits.train",
-    )
-    parser.add_argument(
-        "-test",
-        dest="test",
-        help="optidigits test file",
-        default="optdigits.test",
-    )
-    parser.add_argument(
-        "-k", dest="k", help="number of centroids", default=10,
-    )
+    parser.add_argument("-train", dest="train", help="optidigits train file", default="optdigits.train")
+    parser.add_argument("-test", dest="test", help="optidigits test file", default="optdigits.test")
+    parser.add_argument("-k", dest="k", help="number of centroids", default=10)
     args = parser.parse_args()
+
     main(args.train, args.test, int(args.k))

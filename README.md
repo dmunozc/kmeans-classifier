@@ -6,6 +6,10 @@ With k = 10 the accuracy reached 72%. With k = 30 the accuracy reached 80%
 ## How to Run
 python kmeans.py [-h]
 
+### Confusion Matrices
+![cf](kmeans_cf.png)
+
+### Resulting Digits from Centroids
 ![0 num-30 features](0-30.png)
 ![1 num-30 features](1-30.png)
 ![2 num-30 features](2-30.png)
